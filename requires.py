@@ -61,6 +61,7 @@ class MySQLClient(RelationBase):
         }
         if all(data.values()):
             return str.format(
-                'host={host} port={port} dbname={database} user={user} password={password}',
+                'host={host} port={port} dbname={database} '
+                'user={user} password={password}',
                 **data)
         return None

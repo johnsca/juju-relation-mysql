@@ -31,8 +31,8 @@ class MySQL(RelationBase):
         Depending on the state of the conversation, this can trigger the
         following state:
 
-        * ``{relation_name}.database.requested`` This state will be activated if
-          a remote service is awaiting a database.  This state should be
+        * ``{relation_name}.database.requested`` This state will be activated
+          if a remote service is awaiting a database.  This state should be
           resolved by calling :meth:`provide_database`.  See also
           :meth:`requested_databases`.
         """
