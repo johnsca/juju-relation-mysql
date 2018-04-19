@@ -11,76 +11,65 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from charms.reactive import RelationBase
-from charms.reactive import scopes
-from charms.reactive import hook
-from charms.reactive import not_unless
+from charms.reactive import Endpoint
+from charms.reactive import set_flag, clear_flag
+from charms.reactive import when, when_not
 
 
-class MySQL(RelationBase):
-    # We expect multiple, separate services to be related, but all units of a
-    # given service will share the same database name and connection info.
-    # Thus, we use SERVICE scope and will have one converstaion per service.
-    scope = scopes.SERVICE
+class MySQL(Endpoint):
+    @when('endpoint.{endpoint_name}.joined')
+    def _handle_joined(self):
+        # translate the automatic internal joined flag into a DB requested flag
+        set_flag(self.expand_name('{endpoint_name}.database.requested'))
 
-    @hook('{provides:mysql}-relation-joined')
-    def joined(self):
-        """
-        Handles the relation-joined hook.
-
-        Depending on the state of the conversation, this can trigger the
-        following state:
-
-        * ``{relation_name}.database.requested`` This state will be activated
-          if a remote service is awaiting a database.  This state should be
-          resolved by calling :meth:`provide_database`.  See also
-          :meth:`requested_databases`.
-        """
-        conversation = self.conversation()
-        conversation.set_state('{relation_name}.database.requested')
-
-    @hook('{provides:mysql}-relation-{broken,departed}')
-    def departed(self):
-        conversation = self.conversation()
-
+    @when_not('endpoint.{endpoint_name}.joined')
+    def _handle_broken(self):
         # if these were requested but not yet fulfilled, cancel the request
-        conversation.remove_state('{relation_name}.database.requested')
+        clear_flag(self.expand_name('{endpoint_name}.database.requested'))
 
-    @not_unless('{provides:mysql}.database.requested')
-    def provide_database(self, service, host, port, database, user, password):
+    def database_requests(self):
         """
-        Provide a database to a requesting service.
+        Return a list of requests for databases.
 
-        :param str service: The service which requested the database, as
-            returned by :meth:`~provides.MySQL.requested_databases`.
-        :param str host: The host where the database can be reached (e.g.,
-            the charm's private or public-address).
-        :param int port: The port where the database can be reached.
-        :param str database: The name of the database being provided.
-        :param str user: The username to be used to access the database.
-        :param str password: The password to be used to access the database.
-        """
-        conversation = self.conversation(scope=service)
-        conversation.set_remote(
-            host=host,
-            port=port,
-            database=database,
-            user=user,
-            password=password,
-        )
-        conversation.set_local('database', database)
-        conversation.remove_state('{relation_name}.database.requested')
-
-    def requested_databases(self):
-        """
-        Return a list of services requesting databases.
+        This returns a mapping of request IDs to application names.
 
         Example usage::
 
-            for service in mysql.requested_databases():
-                database = generate_dbname(service)
-                mysql.provide_database(**create_database(database))
+            @when('clients.database.requested')
+            def create_dbs():
+                mysql = endpoint_from_flag('clients.database.requested')
+                for request, application in mysql.database_requests():
+                    db_name = generate_dbname(application)
+                    host, port, user, password = create_database(db_name)
+                    mysql.provide_database(request, db_name,
+                                           host, port, user, password)
+                mysql.mark_complete()
         """
-        for conversation in self.conversations():
-            service = conversation.scope
-            yield service
+        return {relation.relation_id: relation.application_name
+                for relation in self.relations}
+
+    def provide_database(self, request_id, database_name,
+                         host, port, user, password):
+        """
+        Provide a database to a requesting application.
+
+        :param str request_id: The ID for the database request, as
+            returned by :meth:`~provides.MySQL.requested_databases`.
+        :param str database_name: The name of the database being provided.
+        :param str host: The host where the database can be reached (e.g.,
+            the charm's private or public-address).
+        :param int port: The port where the database can be reached.
+        :param str user: The username to be used to access the database.
+        :param str password: The password to be used to access the database.
+        """
+        relation = self.relations[request_id]
+        relation.to_publish_raw.update({
+            'database': database_name,
+            'host': host,
+            'port': port,
+            'user': user,
+            'password': password,
+        })
+
+    def mark_complete(self):
+        clear_flag(self.expand_name('{endpoint_name}.database.requested'))

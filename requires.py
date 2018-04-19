@@ -11,46 +11,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from charms.reactive import RelationBase
-from charms.reactive import hook
-from charms.reactive import scopes
+from charms.reactive import Endpoint
+from charms.reactive import when, when_not
+from charms.reactive import set_flag, clear_flag
+from charms.reactive import data_changed
 
 
-class MySQLClient(RelationBase):
-    # We only expect a single mysql server to be related.  Additionally, if
-    # there are multiple units, it would be for replication purposes only,
-    # so we would expect a leader to provide our connection info, or at least
-    # for all mysql units to agree on the connection info.  Thus, we use a
-    # global conversation scope in which all services and units share the
-    # same conversation.
-    scope = scopes.GLOBAL
+class MySQLClient(Endpoint):
+    @when('endpoint.{endpoint_name}.joined')
+    @when_not('{endpoint_name}.connected')
+    def _handle_joined(self):
+        # translate automatic internal joined flag to published connected flag
+        set_flag(self.expand_name('{endpoint_name}.connected'))
 
-    # These remote data fields will be automatically mapped to accessors
-    # with a basic documentation string provided.
-    auto_accessors = ['host', 'database', 'user', 'password']
-
-    def port(self):
-        """
-        Get the port.
-
-        If not available, returns the default port of 3306.
-        """
-        return self.get_remote('port', 3306)
-
-    @hook('{requires:mysql}-relation-{joined,changed}')
-    def changed(self):
-        self.set_state('{relation_name}.connected')
+    @when('endpoint.{endpoint_name}.changed')
+    def _handle_changed(self):
+        set_flag(self.expand_name('{endpoint_name}.connected'))
         if self.connection_string():
-            self.set_state('{relation_name}.available')
+            set_flag(self.expand_name('{endpoint_name}.available'))
+            data_key = self.expand_name('endpoint.{endpoint_name}.data')
+            if data_changed(data_key, self.connection_string()):
+                set_flag(self.expand_name('{endpoint_name}.changed'))
 
-    @hook('{requires:mysql}-relation-{broken,departed}')
-    def departed(self):
-        self.remove_state('{relation_name}.connected')
-        self.remove_state('{relation_name}.available')
+    @when_not('endpoint.{endpoint_name}.joined')
+    def _handle_broken(self):
+        clear_flag(self.expand_name('{endpoint_name}.connected'))
+        clear_flag(self.expand_name('{endpoint_name}.available'))
 
     def connection_string(self):
         """
         Get the connection string, if available, or None.
+
+        The connection string will be in the format::
+
+            'host={host} port={port} dbname={database} '
+            'user={user} password={password}'
         """
         data = {
             'host': self.host(),
@@ -65,3 +60,35 @@ class MySQLClient(RelationBase):
                 'user={user} password={password}',
                 **data)
         return None
+
+    def database(self):
+        """
+        Return the name of the provided database.
+        """
+        return self.all_joined_units.received_raw['database']
+
+    def host(self):
+        """
+        Return the host for the provided database.
+        """
+        return self.all_joined_units.received_raw['host']
+
+    def port(self):
+        """
+        Return the port the provided database.
+
+        If not available, returns the default port of 3306.
+        """
+        return self.all_joined_units.received_raw.get('port', 3306)
+
+    def user(self):
+        """
+        Return the username for the provided database.
+        """
+        return self.all_joined_units.received_raw['user']
+
+    def password(self):
+        """
+        Return the password for the provided database.
+        """
+        return self.all_joined_units.received_raw['password']
