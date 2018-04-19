@@ -39,7 +39,7 @@ from charms.reactive import data_changed
 @when_any('db.changed',
           'config.changed.admin-pass')
 def render_config():
-    mysql = endpoint_from_flag('db.changed')
+    mysql = endpoint_from_flag('db.available')
     render_template('app-config.j2', '/etc/app.conf', {
         'admin_pass': hookenv.config('admin-pass'),
         'db_conn': mysql.connection_string(),
