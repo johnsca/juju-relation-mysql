@@ -19,7 +19,6 @@ from charms.reactive import data_changed
 
 class MySQLClient(Endpoint):
     @when('endpoint.{endpoint_name}.joined')
-    @when_not('{endpoint_name}.connected')
     def _handle_joined(self):
         # translate automatic internal joined flag to published connected flag
         set_flag(self.expand_name('{endpoint_name}.connected'))
