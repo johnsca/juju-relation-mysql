@@ -38,7 +38,7 @@ class MySQL(Endpoint):
             @when('clients.database.requested')
             def create_dbs():
                 mysql = endpoint_from_flag('clients.database.requested')
-                for request, application in mysql.database_requests():
+                for request, application in mysql.database_requests().items():
                     db_name = generate_dbname(application)
                     host, port, user, password = create_database(db_name)
                     mysql.provide_database(request, db_name,
